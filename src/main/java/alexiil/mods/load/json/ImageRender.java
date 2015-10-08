@@ -24,12 +24,18 @@ public class ImageRender {
     }
 
     public int transformX(int screenWidth) {
-        int trueX=position.width==0?0:screenWidth - position.width;
-        return positionType.transformX(position.x, trueX);
+        if (position == null || positionType == null)
+            return 0;
+        int trueX = position.width;
+        if (trueX == 0)
+            trueX = screenWidth;
+        return positionType.transformX(position.x, screenWidth - trueX);
     }
 
-    public int transformY(int screenWidth) {
-        return positionType.transformY(position.y, screenWidth - position.height);
+    public int transformY(int screenHeight) {
+        if (position == null || positionType == null)
+            return 0;
+        return positionType.transformY(position.y, screenHeight - position.height);
     }
 
     public int getColour() {
@@ -46,7 +52,7 @@ public class ImageRender {
     }
 
     private float getColourPart(int bitStart) {
-        return ((getColour() >> bitStart) & 0xFF) / 256F;
+        return ((getColour() >> bitStart) & 0xFF) / 255F;
     }
 
     public float getRed() {

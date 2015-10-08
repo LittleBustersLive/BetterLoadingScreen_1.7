@@ -3,12 +3,21 @@ package alexiil.mods.load;
 import java.awt.SplashScreen;
 import java.io.File;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.lwjgl.opengl.GL11;
+
+import alexiil.mods.load.ProgressDisplayer.IDisplayer;
+import alexiil.mods.load.json.Area;
+import alexiil.mods.load.json.EPosition;
+import alexiil.mods.load.json.EType;
+import alexiil.mods.load.json.ImageRender;
+import alexiil.mods.load.json.JsonConfig;
+import cpw.mods.fml.client.FMLFileResourcePack;
+import cpw.mods.fml.client.FMLFolderResourcePack;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.audio.ISound;
 import net.minecraft.client.audio.PositionedSoundRecord;
@@ -23,21 +32,10 @@ import net.minecraft.client.resources.LanguageManager;
 import net.minecraft.util.ResourceLocation;
 import net.minecraftforge.common.config.Configuration;
 
-import org.lwjgl.opengl.GL11;
-
-import alexiil.mods.load.ProgressDisplayer.IDisplayer;
-import alexiil.mods.load.json.Area;
-import alexiil.mods.load.json.EPosition;
-import alexiil.mods.load.json.EType;
-import alexiil.mods.load.json.ImageRender;
-import alexiil.mods.load.json.JsonConfig;
-import cpw.mods.fml.client.FMLFileResourcePack;
-import cpw.mods.fml.client.FMLFolderResourcePack;
-import cpw.mods.fml.common.event.FMLPreInitializationEvent;
-
 public class MinecraftDisplayer implements IDisplayer {
     private static String sound;
     private static String defaultSound = "random.levelup";
+    private final boolean preview;
     private ImageRender[] images;
     private TextureManager textureManager = null;
     private Map<String, FontRenderer> fontRenderers = new HashMap<String, FontRenderer>();
@@ -46,6 +44,7 @@ public class MinecraftDisplayer implements IDisplayer {
     private Minecraft mc = null;
     private boolean callAgain = false;
     private IResourcePack myPack;
+    private float clearRed = 1, clearGreen = 1, clearBlue = 1;
 
     public static void playFinishedSound() {
         SoundHandler soundHandler = Minecraft.getMinecraft().getSoundHandler();
@@ -62,6 +61,14 @@ public class MinecraftDisplayer implements IDisplayer {
         }
         ISound sound = PositionedSoundRecord.func_147673_a(location);
         soundHandler.playSound(sound);
+    }
+
+    public MinecraftDisplayer() {
+        this(false);
+    }
+
+    public MinecraftDisplayer(boolean preview) {
+        this.preview = preview;
     }
 
     @SuppressWarnings("unchecked")
@@ -91,21 +98,22 @@ public class MinecraftDisplayer implements IDisplayer {
         sound = cfg.getString("sound", "general", defaultSound, comment4);
 
         // Add ourselves as a resource pack
-        if (!ProgressDisplayer.coreModLocation.isDirectory())
-            myPack = new FMLFileResourcePack(ProgressDisplayer.modContainer);
-        else
-            myPack = new FMLFolderResourcePack(ProgressDisplayer.modContainer);
-        getOnlyList().add(myPack);
+        if (!preview) {
+            if (!ProgressDisplayer.coreModLocation.isDirectory())
+                myPack = new FMLFileResourcePack(ProgressDisplayer.modContainer);
+            else
+                myPack = new FMLFolderResourcePack(ProgressDisplayer.modContainer);
+            getOnlyList().add(myPack);
 
-        mc.refreshResources();
-
+            mc.refreshResources();
+        }
         // Open the special config directory
         File configDir = new File("./config/BetterLoadingScreen");
         if (!configDir.exists())
             configDir.mkdirs();
 
         // Image Config
-        images = new ImageRender[5];
+        images = new ImageRender[6];
         String progress = "betterloadingscreen:textures/progressBars.png";
         String title = "textures/gui/title/mojang.png";
         String font = "textures/font/ascii.png";
@@ -114,30 +122,40 @@ public class MinecraftDisplayer implements IDisplayer {
         images[2] = new ImageRender(font, EPosition.CENTER, EType.DYNAMIC_TEXT_PERCENTAGE, null, new Area(0, -40, 0, 0), "000000", null);
         images[3] = new ImageRender(progress, EPosition.CENTER, EType.STATIC, new Area(0, 10, 182, 5), new Area(0, -50, 182, 5));
         images[4] = new ImageRender(progress, EPosition.CENTER, EType.DYNAMIC_PERCENTAGE, new Area(0, 15, 182, 5), new Area(0, -50, 182, 5));
-        
-        SplashScreen splashScreen=SplashScreen.getSplashScreen();
-        if(splashScreen!=null)
-            splashScreen.close();
-        
+        images[5] = new ImageRender(null, null, EType.CLEAR_COLOUR, null, null, "ffffff", null);
+
+        if (!preview) {
+            SplashScreen splashScreen = SplashScreen.getSplashScreen();
+            if (splashScreen != null)
+                splashScreen.close();
+        }
+
         ImageRender[] defaultImageRender = images;
 
         File imagesFile = new File(configDir, "images.json");
         JsonConfig<ImageRender[]> imagesConfig = new JsonConfig<ImageRender[]>(imagesFile, ImageRender[].class, images);
         images = imagesConfig.load();
 
+        for (ImageRender ir : images) {
+            if (ir.type == EType.CLEAR_COLOUR) {
+                clearRed = ir.getRed();
+                clearGreen = ir.getGreen();
+                clearBlue = ir.getBlue();
+            }
+        }
+
         // Preset one is the default one
         definePreset(configDir, "preset one", defaultImageRender);
 
         // Preset two uses something akin to minecraft's loading screen when loading a world
-        ImageRender[] presetData = new ImageRender[4];
-        presetData[0] =
-                new ImageRender("textures/gui/options_background.png", EPosition.CENTER, EType.STATIC, new Area(0, 0, 65536, 65536), new Area(0, 0,
-                        8192, 8192), "404040", null);
+        ImageRender[] presetData = new ImageRender[5];
+        presetData[0] = new ImageRender("textures/gui/options_background.png", EPosition.CENTER, EType.STATIC, new Area(0, 0, 65536, 65536),
+                new Area(0, 0, 8192, 8192), "404040", null);
         presetData[1] = new ImageRender(font, EPosition.CENTER, EType.DYNAMIC_TEXT_STATUS, null, new Area(0, 0, 0, 0), "FFFFFF", null);
         presetData[2] = new ImageRender(font, EPosition.CENTER, EType.DYNAMIC_TEXT_PERCENTAGE, null, new Area(0, -10, 0, 0), "FFFFFF", null);
-        presetData[3] =
-                new ImageRender(font, EPosition.BOTTOM_CENTER, EType.STATIC_TEXT, null, new Area(0, 10, 0, 0), "FFDD49",
-                        "Better Loading Screen by AlexIIL");
+        presetData[3] = new ImageRender(font, EPosition.BOTTOM_CENTER, EType.STATIC_TEXT, null, new Area(0, 10, 0, 0), "FFDD49",
+                "Better Loading Screen by AlexIIL");
+        presetData[4] = new ImageRender("", null, EType.CLEAR_COLOUR, null, null, "ffffff", null);
         definePreset(configDir, "preset two", presetData);
 
         // Preset three uses... idk, TODO: Preset 3 etc
@@ -173,24 +191,23 @@ public class MinecraftDisplayer implements IDisplayer {
             return fontRenderers.get(fontTexture);
         FontRenderer font = new FontRenderer(mc.gameSettings, new ResourceLocation(fontTexture), textureManager, false);
         font.onResourceManagerReload(mc.getResourceManager());
-        mc.refreshResources();
-        font.onResourceManagerReload(mc.getResourceManager());
+        if (!preview) {
+            mc.refreshResources();
+            font.onResourceManagerReload(mc.getResourceManager());
+        }
         fontRenderers.put(fontTexture, font);
         return font;
     }
 
     public void drawImageRender(ImageRender render, String text, double percent) {
-        /*
-        if(render.position.width==0){
-            render.position.width=resolution.getScaledWidth();
-        }
-        if(render.position.height==0){
-            render.position.height=resolution.getScaledHeight();
-        }
-        */
         int startX = render.transformX(resolution.getScaledWidth());
         int startY = render.transformY(resolution.getScaledHeight());
-        int PWidth=render.position.width==0?resolution.getScaledWidth():render.position.width;
+        int PWidth = 0;
+        int PHeight = 0;
+        if (render.position != null) {
+            PWidth = render.position.width == 0 ? resolution.getScaledWidth() : render.position.width;
+            PHeight = render.position.height == 0 ? resolution.getScaledHeight() : render.position.height;
+        }
         GL11.glColor3f(render.getRed(), render.getGreen(), render.getBlue());
         switch (render.type) {
             case DYNAMIC_PERCENTAGE: {
@@ -198,8 +215,7 @@ public class MinecraftDisplayer implements IDisplayer {
                 textureManager.bindTexture(res);
                 double visibleWidth = PWidth * percent;
                 double textureWidth = render.texture.width * percent;
-                drawRect(startX, startY, visibleWidth, render.position.height, render.texture.x, render.texture.y, textureWidth,
-                        render.texture.height);
+                drawRect(startX, startY, visibleWidth, PHeight, render.texture.x, render.texture.y, textureWidth, render.texture.height);
                 break;
             }
             case DYNAMIC_TEXT_PERCENTAGE: {
@@ -227,13 +243,14 @@ public class MinecraftDisplayer implements IDisplayer {
                 drawString(font, render.text, startX1, startY1, render.getColour());
                 break;
             }
-            default: {// Assume STATIC
+            case STATIC: {
                 ResourceLocation res = new ResourceLocation(render.resourceLocation);
                 textureManager.bindTexture(res);
-                drawRect(startX, startY, PWidth, render.position.height, render.texture.x, render.texture.y, render.texture.width,
-                        render.texture.height);
+                drawRect(startX, startY, PWidth, PHeight, render.texture.x, render.texture.y, render.texture.width, render.texture.height);
                 break;
             }
+            case CLEAR_COLOUR:// Ignore this, as its set elsewhere
+                break;
         }
     }
 
@@ -255,17 +272,22 @@ public class MinecraftDisplayer implements IDisplayer {
 
     private void preDisplayScreen() {
         if (textureManager == null) {
-            textureManager = mc.renderEngine = new TextureManager(mc.getResourceManager());
-            mc.refreshResources();
-            textureManager.onResourceManagerReload(mc.getResourceManager());
-            mc.fontRenderer = new FontRenderer(mc.gameSettings, new ResourceLocation("textures/font/ascii.png"), textureManager, false);
-            if (mc.gameSettings.language != null) {
-                mc.fontRenderer.setUnicodeFlag(mc.func_152349_b());
-                LanguageManager lm = mc.getLanguageManager();
-                mc.fontRenderer.setBidiFlag(lm.isCurrentLanguageBidirectional());
+            if (preview) {
+                textureManager = mc.renderEngine;
             }
-            mc.fontRenderer.onResourceManagerReload(mc.getResourceManager());
-            callAgain = true;
+            else {
+                textureManager = mc.renderEngine = new TextureManager(mc.getResourceManager());
+                mc.refreshResources();
+                textureManager.onResourceManagerReload(mc.getResourceManager());
+                mc.fontRenderer = new FontRenderer(mc.gameSettings, new ResourceLocation("textures/font/ascii.png"), textureManager, false);
+                if (mc.gameSettings.language != null) {
+                    mc.fontRenderer.setUnicodeFlag(mc.func_152349_b());
+                    LanguageManager lm = mc.getLanguageManager();
+                    mc.fontRenderer.setBidiFlag(lm.isCurrentLanguageBidirectional());
+                }
+                mc.fontRenderer.onResourceManagerReload(mc.getResourceManager());
+                callAgain = true;
+            }
         }
         if (fontRenderer != mc.fontRenderer)
             fontRenderer = mc.fontRenderer;
@@ -285,13 +307,15 @@ public class MinecraftDisplayer implements IDisplayer {
         GL11.glEnable(GL11.GL_TEXTURE_2D);
 
         GL11.glClear(GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        GL11.glClearColor(1, 1, 1, 1);
+        GL11.glClearColor(clearRed, clearGreen, clearBlue, 1);
+
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
         GL11.glEnable(GL11.GL_ALPHA_TEST);
         GL11.glAlphaFunc(GL11.GL_GREATER, 0.1F);
 
         GL11.glColor4f(1, 1, 1, 1);
-
     }
 
     private void postDisplayScreen() {
